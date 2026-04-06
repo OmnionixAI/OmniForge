@@ -1,0 +1,86 @@
+project:
+  name: omniforge-smoke
+  output_dir: outputs/omniforge-smoke
+  seed: 42
+
+model:
+  model_name_or_path: sshleifer/tiny-gpt2
+  torch_dtype: float32
+  load_in_4bit: false
+  attn_implementation: eager
+
+adapter:
+  mode: full
+
+cli:
+  enabled: true
+  startup_banner: false
+  color: true
+
+app:
+  vendor: Omnionix
+  app_name: OmniForge
+  version: 0.1.7
+
+data:
+  source: local
+  train_path: data/train.jsonl
+  eval_path: data/eval.jsonl
+  dataset_name:
+  dataset_config_name:
+  train_split: train
+  eval_split: validation
+  prompt_field: prompt
+  response_field: response
+  messages_field: messages
+  max_length: 128
+  packing: false
+  num_proc: 1
+  train_on_prompt: false
+  append_eos_token: true
+  cache_dir: cache
+
+optimization:
+  profile: smoke
+  low_vram_mode: false
+  notebook_safe: true
+  torch_compile: false
+  dataloader_pin_memory: false
+  gradient_checkpointing_reentrant: false
+  auto_enable_tf32: false
+
+training:
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 1
+  learning_rate: 5.0e-5
+  weight_decay: 0.0
+  warmup_ratio: 0.0
+  num_train_epochs: 1
+  max_steps: 1
+  lr_scheduler_type: linear
+  logging_steps: 1
+  eval_steps: 1
+  save_steps: 1
+  bf16: false
+  fp16: false
+  gradient_checkpointing: false
+  max_grad_norm: 1.0
+  optimizer: adamw_torch
+  report_to: []
+  save_total_limit: 1
+  dataloader_num_workers: 0
+  curriculum:
+    enabled: false
+  weighted_loss:
+    enabled: true
+    default_weight: 1.0
+
+generation:
+  max_new_tokens: 32
+  temperature: 0.0
+  top_p: 1.0
+
+export:
+  merge_adapter: false
+  output_dir: outputs/omniforge-smoke/export

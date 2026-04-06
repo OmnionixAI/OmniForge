@@ -1,0 +1,2 @@
+{"prompt":"User: What is sequence packing?\nAssistant:","response":" Sequence packing concatenates multiple shorter examples into fixed-length training chunks to reduce padding waste.","weight":1.0,"difficulty":0.5}
+{"prompt":"User: Why use evaluation during fine-tuning?\nAssistant:","response":" Evaluation helps catch regressions, overfitting, and unstable training before you export a checkpoint.","weight":1.0,"difficulty":0.3}

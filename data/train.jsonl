@@ -1,0 +1,4 @@
+{"messages":[{"role":"system","content":"You are a concise technical assistant."},{"role":"user","content":"Explain LoRA in one sentence."},{"role":"assistant","content":"LoRA fine-tunes a model by learning small low-rank adapter matrices instead of updating every original weight."}],"weight":1.0,"difficulty":0.2}
+{"prompt":"User: Give two benefits of mixed precision training.\nAssistant:","response":" Mixed precision reduces memory usage and often speeds up training on modern GPUs.","weight":1.1,"difficulty":0.4}
+{"text":"Question: What does gradient accumulation do?\nAnswer: It simulates a larger batch size by summing gradients across multiple smaller forward passes before an optimizer step.","weight":1.0,"difficulty":0.6}
+
