@@ -1,7 +1,7 @@
 app:
   vendor: Omnionix
   app_name: OmniForge
-  version: 0.2.4
+  version: 0.2.5
 
 cli:
   enabled: true
@@ -94,3 +94,4 @@ generation:
 export:
   merge_adapter: false
   output_dir: outputs/omniforge-hf-demo/export
+

@@ -13,6 +13,19 @@ from .trainer import AegisTrainer, WeightedCausalCollator, build_training_argume
 from .utils import detect_runtime, ensure_dir, save_json, set_seed
 
 
+def _has_exportable_model_artifacts(source_dir: Path, adapter_mode: str) -> bool:
+    if not source_dir.exists():
+        return False
+    mode = adapter_mode.lower()
+    if mode == "full":
+        return (source_dir / "config.json").exists() and any(
+            (source_dir / filename).exists() for filename in ("model.safetensors", "pytorch_model.bin")
+        )
+    return (source_dir / "adapter_config.json").exists() and any(
+        (source_dir / filename).exists() for filename in ("adapter_model.safetensors", "adapter_model.bin")
+    )
+
+
 def run_data_prep(config_path: str):
     config = load_config(config_path)
     applied = apply_runtime_optimizations(config)
@@ -76,13 +89,15 @@ def run_evaluation(config_path: str):
     apply_runtime_optimizations(config)
     tokenizer = load_tokenizer(config)
     source_dir = Path(config.project.output_dir)
-    if source_dir.exists() and config.adapter.mode.lower() != "full":
+    if _has_exportable_model_artifacts(source_dir, config.adapter.mode) and config.adapter.mode.lower() != "full":
         from peft import PeftModel
 
         base_model = AutoModelForCausalLM.from_pretrained(config.model.model_name_or_path)
         model = PeftModel.from_pretrained(base_model, str(source_dir))
+    elif _has_exportable_model_artifacts(source_dir, config.adapter.mode):
+        model = AutoModelForCausalLM.from_pretrained(str(source_dir))
     else:
-        model = AutoModelForCausalLM.from_pretrained(str(source_dir) if source_dir.exists() else config.model.model_name_or_path)
+        model = AutoModelForCausalLM.from_pretrained(config.model.model_name_or_path)
     model.eval()
 
     prompt = "User: Explain why evaluation checkpoints matter during fine-tuning.\nAssistant:"
@@ -117,6 +132,10 @@ def run_export(config_path: str):
     export_dir = ensure_dir(config.export.output_dir)
     tokenizer = load_tokenizer(config)
     source_dir = Path(config.project.output_dir)
+    if not _has_exportable_model_artifacts(source_dir, config.adapter.mode):
+        raise FileNotFoundError(
+            f"No trained model artifacts were found in {source_dir}. Run training first or point the config at a completed output directory."
+        )
 
     if config.adapter.mode.lower() == "full":
         model = AutoModelForCausalLM.from_pretrained(str(source_dir))

@@ -9,7 +9,7 @@ Branding:
 
 - App: `OmniForge`
 - Vendor: `Omnionix`
-- Version: `0.2.4`
+- Version: `0.2.5`
 
 It is designed to run:
 
@@ -125,3 +125,4 @@ Typical notebook flow:
 ## Proprietary posture
 
 This repository includes an `All Rights Reserved` notice in [PROPRIETARY_NOTICE.txt](C:\JV\Other (Coding)\Proprietary Training Script\PROPRIETARY_NOTICE.txt). Third-party packages, datasets, and base model weights remain subject to their own licenses.
+

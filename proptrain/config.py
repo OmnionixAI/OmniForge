@@ -11,7 +11,7 @@ import yaml
 class AppConfig:
     vendor: str = "Omnionix"
     app_name: str = "OmniForge"
-    version: str = "0.2.4"
+    version: str = "0.2.5"
 
 
 @dataclass
@@ -257,3 +257,4 @@ def load_config(path: str | Path) -> OmniForgeConfig:
         generation=GenerationConfig(**_filtered_kwargs(raw.get("generation"), {"max_new_tokens", "temperature", "top_p"})),
         export=ExportConfig(**_filtered_kwargs(raw.get("export"), {"merge_adapter", "output_dir"})),
     )
+
