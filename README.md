@@ -11,6 +11,10 @@ Branding:
 - Vendor: `Omnionix`
 - Version: `0.2.5`
 
+License:
+
+- Apache License 2.0
+
 It is designed to run:
 
 - locally
@@ -120,7 +124,9 @@ Typical notebook flow:
 !python -m omniforge export --config configs/example_sft.yaml
 ```
 
-## Proprietary posture
+## License
 
-This repository includes an `All Rights Reserved` notice in `PROPRIETARY_NOTICE.txt`. Third-party packages, datasets, base model weights, and any uploaded Hub repos remain subject to their own licenses and platform rules.
+OmniForge is licensed under the Apache License 2.0. See the `LICENSE` file for the full text.
+
+Third-party packages, datasets, base model weights, and any uploaded Hub repos remain subject to their own licenses and platform rules.
 
