@@ -12,7 +12,7 @@ import yaml
 
 from proptrain.config import load_config
 from proptrain.modeling import apply_runtime_optimizations, bitsandbytes_available, recommend_optimization_profile, runtime_hardware_summary
-from proptrain.pipeline import run_data_prep, run_evaluation, run_export, run_training
+from proptrain.pipeline import export_gguf, run_data_prep, run_evaluation, run_export, run_training, upload_to_hub
 from proptrain.utils import detect_runtime
 
 from . import __version__
@@ -34,7 +34,7 @@ def _show_banner(enabled: bool) -> None:
                                        /____/
 """
     print(_color(enabled, "96", banner.rstrip()))
-    print(_color(enabled, "1;97", f"OmniForge {__version__}"))  # bold white
+    print(_color(enabled, "1;97", f"OmniForge {__version__}"))
     print(_color(enabled, "90", "Made by Omnionix"))
     print()
 
@@ -124,6 +124,24 @@ def _default_template(model: str, source: str) -> dict:
         },
         "generation": {"max_new_tokens": 128, "temperature": 0.2, "top_p": 0.9},
         "export": {"merge_adapter": False, "output_dir": "outputs/omniforge-run/export"},
+        "hub": {
+            "enabled": False,
+            "repo_id": None,
+            "private": True,
+            "path_in_repo": ".",
+            "source": "export",
+            "commit_message": "Upload OmniForge artifacts",
+            "token_env_var": "HF_TOKEN",
+        },
+        "gguf": {
+            "enabled": False,
+            "output_dir": "outputs/omniforge-run/gguf",
+            "converter_path": None,
+            "quantize": False,
+            "quantization": "Q4_K_M",
+            "filename": None,
+            "source": "export",
+        },
     }
 
 
@@ -178,6 +196,30 @@ def _resolve_config(args: argparse.Namespace):
         config.project.output_dir = args.output_dir
     if getattr(args, "resume_from_checkpoint", None):
         config.training.resume_from_checkpoint = args.resume_from_checkpoint
+    if getattr(args, "hub_repo_id", None):
+        config.hub.repo_id = args.hub_repo_id
+    if getattr(args, "hub_private", None) is not None:
+        config.hub.private = args.hub_private
+    if getattr(args, "hub_source", None):
+        config.hub.source = args.hub_source
+    if getattr(args, "hub_path_in_repo", None):
+        config.hub.path_in_repo = args.hub_path_in_repo
+    if getattr(args, "hub_commit_message", None):
+        config.hub.commit_message = args.hub_commit_message
+    if getattr(args, "hf_token_env_var", None):
+        config.hub.token_env_var = args.hf_token_env_var
+    if getattr(args, "gguf_output_dir", None):
+        config.gguf.output_dir = args.gguf_output_dir
+    if getattr(args, "gguf_converter_path", None):
+        config.gguf.converter_path = args.gguf_converter_path
+    if getattr(args, "gguf_quantize", None):
+        config.gguf.quantize = args.gguf_quantize
+    if getattr(args, "gguf_quantization", None):
+        config.gguf.quantization = args.gguf_quantization
+    if getattr(args, "gguf_filename", None):
+        config.gguf.filename = args.gguf_filename
+    if getattr(args, "gguf_source", None):
+        config.gguf.source = args.gguf_source
     cli_enabled = config.cli.enabled and os.environ.get("OMNIFORGE_CLI_ENABLED", "1") != "0"
     banner_enabled = cli_enabled and config.cli.startup_banner and not getattr(args, "no_banner", False)
     _show_banner(banner_enabled)
@@ -221,6 +263,22 @@ def command_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_upload(args: argparse.Namespace) -> int:
+    config = _resolve_config(args)
+    config.hub.enabled = True
+    config_path = _write_temp_config(config, args.config)
+    upload_to_hub(config_path, token=args.hf_token)
+    return 0
+
+
+def command_gguf(args: argparse.Namespace) -> int:
+    config = _resolve_config(args)
+    config.gguf.enabled = True
+    config_path = _write_temp_config(config, args.config)
+    export_gguf(config_path)
+    return 0
+
+
 def command_inspect(args: argparse.Namespace) -> int:
     color = not args.no_color
     config = _resolve_config(args)
@@ -233,6 +291,8 @@ def command_inspect(args: argparse.Namespace) -> int:
     _print_status("Grad ckpt", str(recommendation["gradient_checkpointing"]), color)
     _print_status("bf16", str(recommendation["bf16"]), color)
     _print_status("fp16", str(recommendation["fp16"]), color)
+    _print_status("HF visibility", "private" if config.hub.private else "public", color)
+    _print_status("GGUF source", config.gguf.source, color)
     return 0
 
 
@@ -256,7 +316,9 @@ def build_parser() -> argparse.ArgumentParser:
         ("prepare", command_prepare, "Prepare and tokenize a dataset."),
         ("train", command_train, "Run fine-tuning."),
         ("eval", command_eval, "Generate a sample response from the trained model."),
-        ("export", command_export, "Export merged or adapter artifacts."),
+        ("export", command_export, "Export merged or adapter artifacts locally."),
+        ("upload", command_upload, "Upload local artifacts to Hugging Face Hub."),
+        ("gguf", command_gguf, "Convert local/exported model artifacts into GGUF file(s)."),
         ("inspect", command_inspect, "Show the resolved optimization plan for a config."),
     ]:
         sub = subparsers.add_parser(name, help=help_text)
@@ -268,7 +330,22 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--dataset-config-name", help="Optional Hugging Face dataset config name.")
         sub.add_argument("--output-dir", help="Override the output directory for this run.")
         sub.add_argument("--resume-from-checkpoint", help="Resume training from an existing checkpoint.")
-        sub.set_defaults(func=func)
+        sub.add_argument("--hub-repo-id", help="Hugging Face repo id like username/repo-name.")
+        sub.add_argument("--hub-source", help="Upload source: export, train, or an explicit local path.")
+        sub.add_argument("--hub-path-in-repo", help="Target folder path inside the Hugging Face repo.")
+        sub.add_argument("--hub-commit-message", help="Commit message for the Hugging Face upload.")
+        sub.add_argument("--hf-token", help="Hugging Face write token. Prefer using an environment variable instead.")
+        sub.add_argument("--hf-token-env-var", help="Environment variable name to read the Hugging Face token from.")
+        sub.add_argument("--hub-private", dest="hub_private", action="store_true", help="Create/upload to a private Hugging Face repo.")
+        sub.add_argument("--hub-public", dest="hub_private", action="store_false", help="Create/upload to a public Hugging Face repo.")
+        sub.add_argument("--gguf-output-dir", help="Where GGUF files should be written.")
+        sub.add_argument("--gguf-converter-path", help="Path to llama.cpp convert_hf_to_gguf.py.")
+        sub.add_argument("--gguf-source", help="GGUF source: export, train, or an explicit local path.")
+        sub.add_argument("--gguf-filename", help="Output GGUF filename, e.g. model.gguf.")
+        sub.add_argument("--gguf-quantize", dest="gguf_quantize", action="store_true", help="Also quantize the GGUF output.")
+        sub.add_argument("--no-gguf-quantize", dest="gguf_quantize", action="store_false", help="Disable GGUF quantization.")
+        sub.add_argument("--gguf-quantization", help="Quantization preset such as Q4_K_M or Q8_0.")
+        sub.set_defaults(func=func, hub_private=None, gguf_quantize=None)
 
     return parser
 

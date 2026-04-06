@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import inspect
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 
 import torch
 from transformers import AutoModelForCausalLM, GenerationConfig as HFGenerationConfig
@@ -24,6 +28,111 @@ def _has_exportable_model_artifacts(source_dir: Path, adapter_mode: str) -> bool
     return (source_dir / "adapter_config.json").exists() and any(
         (source_dir / filename).exists() for filename in ("adapter_model.safetensors", "adapter_model.bin")
     )
+
+
+def _resolve_upload_source(config) -> Path:
+    source = config.hub.source.lower()
+    if source == "export":
+        return Path(config.export.output_dir)
+    if source == "train":
+        return Path(config.project.output_dir)
+    return Path(source)
+
+
+def _resolve_gguf_source(config) -> Path:
+    source = config.gguf.source.lower()
+    if source == "export":
+        return Path(config.export.output_dir)
+    if source == "train":
+        return Path(config.project.output_dir)
+    return Path(source)
+
+
+def _prepare_gguf_source_dir(config) -> Path:
+    source_dir = _resolve_gguf_source(config)
+    if _has_exportable_model_artifacts(source_dir, "full"):
+        return source_dir
+    if config.adapter.mode.lower() == "full":
+        raise FileNotFoundError(f"No full-model artifacts were found in {source_dir} for GGUF conversion.")
+    if not _has_exportable_model_artifacts(source_dir, config.adapter.mode):
+        raise FileNotFoundError(f"No trained artifacts were found in {source_dir} for GGUF conversion.")
+
+    temp_dir = ensure_dir(Path(config.gguf.output_dir) / "hf_merged")
+    tokenizer = load_tokenizer(config)
+    from peft import PeftModel
+
+    base_model = AutoModelForCausalLM.from_pretrained(config.model.model_name_or_path)
+    model = PeftModel.from_pretrained(base_model, str(source_dir))
+    merged = maybe_merge_adapter(model)
+    merged.save_pretrained(temp_dir)
+    tokenizer.save_pretrained(temp_dir)
+    return temp_dir
+
+
+def upload_to_hub(config_path: str, token: str | None = None):
+    config = load_config(config_path)
+    if not config.hub.repo_id:
+        raise ValueError("Set hub.repo_id before uploading to Hugging Face.")
+    resolved_token = token or os.environ.get(config.hub.token_env_var)
+    if not resolved_token:
+        raise ValueError(
+            f"No Hugging Face token was provided. Pass --hf-token or set the {config.hub.token_env_var} environment variable."
+        )
+
+    upload_dir = _resolve_upload_source(config)
+    if not upload_dir.exists():
+        raise FileNotFoundError(f"Upload source does not exist: {upload_dir}")
+
+    from huggingface_hub import HfApi
+
+    api = HfApi(token=resolved_token)
+    api.create_repo(repo_id=config.hub.repo_id, private=config.hub.private, exist_ok=True)
+    api.upload_folder(
+        repo_id=config.hub.repo_id,
+        folder_path=str(upload_dir),
+        path_in_repo=config.hub.path_in_repo,
+        commit_message=config.hub.commit_message,
+        token=resolved_token,
+    )
+    print(f"Uploaded OmniForge artifacts from {upload_dir} to https://huggingface.co/{config.hub.repo_id}")
+    return {"repo_id": config.hub.repo_id, "upload_dir": str(upload_dir)}
+
+
+def export_gguf(config_path: str):
+    config = load_config(config_path)
+    output_dir = ensure_dir(config.gguf.output_dir)
+    if not config.gguf.converter_path:
+        raise ValueError("Set gguf.converter_path to llama.cpp's convert_hf_to_gguf.py before exporting GGUF.")
+
+    source_dir = _prepare_gguf_source_dir(config)
+    converter_path = Path(config.gguf.converter_path)
+    if not converter_path.exists():
+        raise FileNotFoundError(f"GGUF converter not found: {converter_path}")
+
+    base_name = config.gguf.filename or f"{config.project.name}.gguf"
+    output_path = output_dir / base_name
+
+    command = [sys.executable, str(converter_path), str(source_dir), "--outfile", str(output_path)]
+    subprocess.run(command, check=True)
+
+    generated_paths = [str(output_path)]
+    if config.gguf.quantize:
+        quantizer = converter_path.parent / "llama-quantize"
+        if os.name == "nt":
+            quantizer_exe = quantizer.with_suffix(".exe")
+            if quantizer_exe.exists():
+                quantizer = quantizer_exe
+        if not Path(quantizer).exists():
+            raise FileNotFoundError(
+                f"Quantization was requested but llama-quantize was not found next to the converter: {quantizer}"
+            )
+        quantized_name = output_path.stem + f"-{config.gguf.quantization}.gguf"
+        quantized_path = output_dir / quantized_name
+        subprocess.run([str(quantizer), str(output_path), str(quantized_path), config.gguf.quantization], check=True)
+        generated_paths.append(str(quantized_path))
+
+    print(f"Exported GGUF artifact(s) to {output_dir}")
+    return {"output_dir": str(output_dir), "files": generated_paths}
 
 
 def run_data_prep(config_path: str):

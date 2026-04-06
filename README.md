@@ -1,6 +1,6 @@
 # OmniForge
 
-OmniForge is a proprietary-oriented CLI for fine-tuning Hugging Face language models on either:
+OmniForge is a CLI for fine-tuning Hugging Face language models on either:
 
 - local datasets
 - Hugging Face datasets
@@ -24,21 +24,17 @@ It is designed to run:
 - accepts local JSONL/JSON/CSV/Parquet/TXT datasets
 - accepts Hugging Face datasets by name and split
 - supports prompt masking, weighted loss, curriculum gating, and sequence packing
-- exports adapters or merged artifacts
+- exports adapters or merged artifacts locally
+- uploads finished artifacts to Hugging Face Hub when you provide a write token
+- supports public or private Hugging Face repos
+- converts finished models into GGUF file(s) through a local `llama.cpp` converter path
 - provides a branded CLI with optional startup banner and colors
 - auto-recommends runtime optimization profiles based on available hardware
 - supports CLI overrides for model, dataset, output directory, and checkpoint resume
 
 ## Important honesty note
 
-This repository includes stronger optimization defaults, but it does **not** prove universal `90% less VRAM` and `5x faster` results across every model, GPU, and dataset. Those numbers depend on model size, precision, adapter mode, hardware, sequence length, and batch shape. OmniForge does include the practical building blocks usually used to pursue those gains:
-
-- LoRA adapters
-- optional 4-bit loading when `bitsandbytes` is available
-- gradient checkpointing
-- sequence packing
-- TF32 enablement where available
-- notebook-safe fallback behavior instead of hard crashes
+This repository includes stronger optimization defaults, but it does **not** prove universal `90% less VRAM` and `5x faster` results across every model, GPU, and dataset. Those numbers depend on model size, precision, adapter mode, hardware, sequence length, and batch shape.
 
 ## Install
 
@@ -57,61 +53,53 @@ python -m omniforge prepare --config configs/example_sft.yaml
 python -m omniforge train --config configs/example_sft.yaml
 python -m omniforge eval --config configs/example_sft.yaml
 python -m omniforge export --config configs/example_sft.yaml
+python -m omniforge upload --config configs/example_sft.yaml --hub-repo-id yourname/omniforge-model --hub-private
+python -m omniforge gguf --config configs/example_sft.yaml --gguf-converter-path C:\path\to\llama.cpp\convert_hf_to_gguf.py
 ```
 
-After `pip install -e .`, you can also use:
+## Local vs Hub storage
+
+OmniForge still stores artifacts locally by default.
+
+- local training outputs go to `project.output_dir`
+- local exported model artifacts go to `export.output_dir`
+- local GGUF files go to `gguf.output_dir`
+- Hugging Face upload only happens when you explicitly run `upload` or set up a config for that workflow
+
+## Hugging Face upload
+
+Set a write token in an environment variable such as `HF_TOKEN`, then run:
 
 ```bash
-omniforge doctor
-omniforge train --config configs/example_sft.yaml
+python -m omniforge upload --config configs/example_sft.yaml --hub-repo-id yourname/your-repo --hub-private
+python -m omniforge upload --config configs/example_sft.yaml --hub-repo-id yourname/your-repo --hub-public
 ```
 
-Example one-off overrides without editing YAML:
+You can also choose what gets uploaded:
+
+- `--hub-source export`
+- `--hub-source train`
+- `--hub-source C:\some\local\folder`
+
+## GGUF export
+
+GGUF export needs a local `llama.cpp` converter path.
+
+GGUF is optional. If you do not run the `gguf` command, OmniForge keeps your outputs in the normal local Hugging Face-style format and can still upload those artifacts to Hugging Face Hub.
+
+Example:
 
 ```bash
-python -m omniforge train --config configs/example_sft.yaml --model Qwen/Qwen2.5-0.5B-Instruct --train-path data/train.jsonl --output-dir outputs/qwen-run
-python -m omniforge train --config configs/hf_dataset_example.yaml --dataset-name tatsu-lab/alpaca
+python -m omniforge gguf --config configs/example_sft.yaml --gguf-converter-path C:\llama.cpp\convert_hf_to_gguf.py
+python -m omniforge gguf --config configs/example_sft.yaml --gguf-converter-path C:\llama.cpp\convert_hf_to_gguf.py --gguf-quantize --gguf-quantization Q4_K_M
 ```
 
-## Startup banner
+Notes:
 
-You can activate or deactivate the CLI presentation at startup:
-
-- config: `cli.enabled: true|false`
-- config: `cli.startup_banner: true|false`
-- env override: `OMNIFORGE_CLI_ENABLED=0`
-- runtime flag: `--no-banner`
-
-## Config examples
-
-- [configs/example_sft.yaml](C:\JV\Other (Coding)\Proprietary Training Script\configs\example_sft.yaml): local dataset example
-- [configs/hf_dataset_example.yaml](C:\JV\Other (Coding)\Proprietary Training Script\configs\hf_dataset_example.yaml): Hugging Face dataset example
-- [configs/smoke_test.yaml](C:\JV\Other (Coding)\Proprietary Training Script\configs\smoke_test.yaml): tiny end-to-end validation config
-
-## Local dataset format
-
-Each row can use one of these shapes:
-
-```json
-{"messages":[{"role":"system","content":"You are precise."},{"role":"user","content":"Explain LoRA."},{"role":"assistant","content":"LoRA trains low-rank adapters instead of updating every base weight."}],"weight":1.0,"difficulty":0.2}
-```
-
-```json
-{"prompt":"User: Explain gradient accumulation.\nAssistant:","response":" It simulates a larger batch by summing gradients across smaller steps.","weight":1.0}
-```
-
-```json
-{"text":"Question: What is sequence packing?\nAnswer: It reduces padding waste by concatenating shorter samples into fixed blocks."}
-```
+- if your model is adapter-based, OmniForge will prepare a merged Hugging Face model directory for GGUF conversion when needed
+- quantization also expects `llama-quantize` next to the converter
 
 ## Kaggle and Colab
-
-OmniForge is built to degrade gracefully:
-
-- if CUDA is unavailable, it falls back to normal loading
-- if `bitsandbytes` is unavailable, 4-bit loading is skipped instead of crashing
-- notebook-safe defaults avoid assuming desktop-only behavior
-- runtime-aware optimization profiles adapt dtype, 4-bit loading, and memory settings automatically
 
 Typical notebook flow:
 
@@ -120,9 +108,10 @@ Typical notebook flow:
 !pip install -e .
 !python -m omniforge doctor
 !python -m omniforge train --config configs/example_sft.yaml
+!python -m omniforge export --config configs/example_sft.yaml
 ```
 
 ## Proprietary posture
 
-This repository includes an `All Rights Reserved` notice in [PROPRIETARY_NOTICE.txt](C:\JV\Other (Coding)\Proprietary Training Script\PROPRIETARY_NOTICE.txt). Third-party packages, datasets, and base model weights remain subject to their own licenses.
+This repository includes an `All Rights Reserved` notice in [PROPRIETARY_NOTICE.txt](C:\JV\Other (Coding)\Proprietary Training Script\PROPRIETARY_NOTICE.txt). Third-party packages, datasets, base model weights, and any uploaded Hub repos remain subject to their own licenses and platform rules.
 

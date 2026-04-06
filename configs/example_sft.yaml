@@ -97,6 +97,23 @@ generation:
   top_p: 0.9
 
 export:
-  merge_adapter: false
+  merge_adapter: true
   output_dir: outputs/omniforge-local-demo/export
 
+hub:
+  enabled: false
+  repo_id:
+  private: true
+  path_in_repo: .
+  source: export
+  commit_message: Upload OmniForge artifacts
+  token_env_var: HF_TOKEN
+
+gguf:
+  enabled: false
+  output_dir: outputs/omniforge-local-demo/gguf
+  converter_path:
+  quantize: false
+  quantization: Q4_K_M
+  filename:
+  source: export

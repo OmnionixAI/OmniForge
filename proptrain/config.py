@@ -139,6 +139,28 @@ class ExportConfig:
 
 
 @dataclass
+class HubConfig:
+    enabled: bool = False
+    repo_id: str | None = None
+    private: bool = True
+    path_in_repo: str = "."
+    source: str = "export"
+    commit_message: str = "Upload OmniForge artifacts"
+    token_env_var: str = "HF_TOKEN"
+
+
+@dataclass
+class GgufConfig:
+    enabled: bool = False
+    output_dir: str = "outputs/gguf"
+    converter_path: str | None = None
+    quantize: bool = False
+    quantization: str = "Q4_K_M"
+    filename: str | None = None
+    source: str = "export"
+
+
+@dataclass
 class OmniForgeConfig:
     app: AppConfig = field(default_factory=AppConfig)
     cli: CLIConfig = field(default_factory=CLIConfig)
@@ -150,6 +172,8 @@ class OmniForgeConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
+    hub: HubConfig = field(default_factory=HubConfig)
+    gguf: GgufConfig = field(default_factory=GgufConfig)
 
 
 AegisConfig = OmniForgeConfig
@@ -256,5 +280,6 @@ def load_config(path: str | Path) -> OmniForgeConfig:
         ),
         generation=GenerationConfig(**_filtered_kwargs(raw.get("generation"), {"max_new_tokens", "temperature", "top_p"})),
         export=ExportConfig(**_filtered_kwargs(raw.get("export"), {"merge_adapter", "output_dir"})),
+        hub=HubConfig(**_filtered_kwargs(raw.get("hub"), {"enabled", "repo_id", "private", "path_in_repo", "source", "commit_message", "token_env_var"})),
+        gguf=GgufConfig(**_filtered_kwargs(raw.get("gguf"), {"enabled", "output_dir", "converter_path", "quantize", "quantization", "filename", "source"})),
     )
-
