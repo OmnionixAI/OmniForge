@@ -111,6 +111,7 @@ def build_training_arguments(config: OmniForgeConfig) -> TrainingArguments:
         "save_total_limit": config.training.save_total_limit,
         "dataloader_num_workers": config.training.dataloader_num_workers,
         "dataloader_pin_memory": config.optimization.dataloader_pin_memory,
+        "dataloader_persistent_workers": config.optimization.dataloader_persistent_workers,
         "save_strategy": "steps",
         "logging_strategy": "steps",
         "remove_unused_columns": False,

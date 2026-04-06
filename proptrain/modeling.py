@@ -50,8 +50,12 @@ def recommend_optimization_profile(config: OmniForgeConfig) -> dict[str, Any]:
         "load_in_4bit": config.model.load_in_4bit,
         "gradient_checkpointing": config.training.gradient_checkpointing,
         "dataloader_pin_memory": config.optimization.dataloader_pin_memory,
+        "dataloader_persistent_workers": config.optimization.dataloader_persistent_workers,
+        "per_device_train_batch_size": config.training.per_device_train_batch_size,
+        "gradient_accumulation_steps": config.training.gradient_accumulation_steps,
         "bf16": config.training.bf16,
         "fp16": config.training.fp16,
+        "attn_implementation": config.model.attn_implementation,
     }
     if not config.optimization.auto_profile:
         return recommendation
@@ -62,9 +66,14 @@ def recommend_optimization_profile(config: OmniForgeConfig) -> dict[str, Any]:
                 "profile": "cpu-safe",
                 "torch_dtype": "float32",
                 "load_in_4bit": False,
+                "gradient_checkpointing": False,
                 "dataloader_pin_memory": False,
+                "dataloader_persistent_workers": False,
                 "bf16": False,
                 "fp16": False,
+                "per_device_train_batch_size": 1,
+                "gradient_accumulation_steps": max(config.training.gradient_accumulation_steps, 1),
+                "attn_implementation": "eager",
             }
         )
         return recommendation
@@ -77,8 +86,12 @@ def recommend_optimization_profile(config: OmniForgeConfig) -> dict[str, Any]:
                 "load_in_4bit": True,
                 "gradient_checkpointing": True,
                 "dataloader_pin_memory": True,
+                "dataloader_persistent_workers": config.training.dataloader_num_workers > 0,
                 "bf16": bool(summary["bf16_supported"]),
                 "fp16": not bool(summary["bf16_supported"]),
+                "per_device_train_batch_size": 1,
+                "gradient_accumulation_steps": max(config.training.gradient_accumulation_steps, 16),
+                "attn_implementation": "sdpa",
             }
         )
     else:
@@ -86,10 +99,14 @@ def recommend_optimization_profile(config: OmniForgeConfig) -> dict[str, Any]:
             {
                 "profile": "throughput",
                 "load_in_4bit": config.model.load_in_4bit,
-                "gradient_checkpointing": config.training.gradient_checkpointing,
+                "gradient_checkpointing": False if vram >= 40 else config.training.gradient_checkpointing,
                 "dataloader_pin_memory": True,
+                "dataloader_persistent_workers": config.training.dataloader_num_workers > 0,
                 "bf16": bool(summary["bf16_supported"]),
                 "fp16": not bool(summary["bf16_supported"]),
+                "per_device_train_batch_size": max(config.training.per_device_train_batch_size, 2 if vram < 40 else 4),
+                "gradient_accumulation_steps": max(1, min(config.training.gradient_accumulation_steps, 8 if vram < 40 else 4)),
+                "attn_implementation": "sdpa",
             }
         )
     if recommendation["bf16"]:
@@ -106,8 +123,12 @@ def apply_runtime_optimizations(config: OmniForgeConfig) -> dict[str, Any]:
     config.model.load_in_4bit = recommendation["load_in_4bit"]
     config.training.gradient_checkpointing = recommendation["gradient_checkpointing"]
     config.optimization.dataloader_pin_memory = recommendation["dataloader_pin_memory"]
+    config.optimization.dataloader_persistent_workers = recommendation["dataloader_persistent_workers"]
+    config.training.per_device_train_batch_size = recommendation["per_device_train_batch_size"]
+    config.training.gradient_accumulation_steps = recommendation["gradient_accumulation_steps"]
     config.training.bf16 = recommendation["bf16"]
     config.training.fp16 = recommendation["fp16"]
+    config.model.attn_implementation = recommendation["attn_implementation"]
     return recommendation
 
 

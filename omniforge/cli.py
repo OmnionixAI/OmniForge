@@ -18,6 +18,21 @@ from proptrain.utils import detect_runtime
 from . import __version__
 
 
+MODEL_PRESETS = [
+    "Qwen/Qwen2.5-0.5B-Instruct",
+    "Qwen/Qwen2.5-1.5B-Instruct",
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "microsoft/phi-2",
+    "distilgpt2",
+]
+
+HF_DATASET_PRESETS = [
+    "tatsu-lab/alpaca",
+    "Abirate/english_quotes",
+    "mlabonne/guanaco-llama2-1k",
+]
+
+
 def _color(enabled: bool, code: str, text: str) -> str:
     return f"\033[{code}m{text}\033[0m" if enabled else text
 
@@ -41,6 +56,25 @@ def _show_banner(enabled: bool) -> None:
 
 def _print_status(label: str, value: str, enabled: bool = True) -> None:
     print(f"{_color(enabled, '94', label + ':'):14} {value}")
+
+
+def _pick_from_list(title: str, options: list[str], allow_custom: bool = True) -> str:
+    print(title)
+    for idx, option in enumerate(options, start=1):
+        print(f"{idx}. {option}")
+    if allow_custom:
+        print(f"{len(options) + 1}. Custom")
+    while True:
+        choice = input("Select an option: ").strip()
+        if choice.isdigit():
+            selected = int(choice)
+            if 1 <= selected <= len(options):
+                return options[selected - 1]
+            if allow_custom and selected == len(options) + 1:
+                custom = input("Enter custom value: ").strip()
+                if custom:
+                    return custom
+        print("Enter a valid selection.")
 
 
 def _default_template(model: str, source: str) -> dict:
@@ -94,8 +128,10 @@ def _default_template(model: str, source: str) -> dict:
             "notebook_safe": True,
             "torch_compile": False,
             "dataloader_pin_memory": False,
+            "dataloader_persistent_workers": False,
             "gradient_checkpointing_reentrant": False,
             "auto_enable_tf32": True,
+            "max_memory_margin_gb": 1.5,
         },
         "training": {
             "per_device_train_batch_size": 1,
@@ -151,6 +187,31 @@ def command_init(args: argparse.Namespace) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(yaml.safe_dump(template, sort_keys=False), encoding="utf-8")
     print(f"Wrote OmniForge config to {output}")
+    return 0
+
+
+def command_select_model(args: argparse.Namespace) -> int:
+    model = _pick_from_list("Model presets", MODEL_PRESETS, allow_custom=True)
+    print(model)
+    return 0
+
+
+def command_select_dataset(args: argparse.Namespace) -> int:
+    source = _pick_from_list("Dataset source", ["local", "hf"], allow_custom=False)
+    if source == "local":
+        train_path = input("Enter local training dataset path: ").strip()
+        eval_path = input("Enter local evaluation dataset path (optional): ").strip()
+        print(yaml.safe_dump({"source": "local", "train_path": train_path, "eval_path": eval_path or None}, sort_keys=False).strip())
+        return 0
+    dataset_name = _pick_from_list("Hugging Face dataset presets", HF_DATASET_PRESETS, allow_custom=True)
+    train_split = input("Train split [train]: ").strip() or "train"
+    eval_split = input("Eval split [validation]: ").strip() or "validation"
+    print(
+        yaml.safe_dump(
+            {"source": "hf", "dataset_name": dataset_name, "train_split": train_split, "eval_split": eval_split},
+            sort_keys=False,
+        ).strip()
+    )
     return 0
 
 
@@ -289,6 +350,8 @@ def command_inspect(args: argparse.Namespace) -> int:
     _print_status("DType", recommendation["torch_dtype"], color)
     _print_status("4-bit", str(recommendation["load_in_4bit"]), color)
     _print_status("Grad ckpt", str(recommendation["gradient_checkpointing"]), color)
+    _print_status("Batch size", str(recommendation["per_device_train_batch_size"]), color)
+    _print_status("Grad accum", str(recommendation["gradient_accumulation_steps"]), color)
     _print_status("bf16", str(recommendation["bf16"]), color)
     _print_status("fp16", str(recommendation["fp16"]), color)
     _print_status("HF visibility", "private" if config.hub.private else "public", color)
@@ -305,6 +368,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor", help="Inspect runtime compatibility.")
     doctor.set_defaults(func=command_doctor)
+
+    select_model_cmd = subparsers.add_parser("select-model", help="Interactively choose a base model.")
+    select_model_cmd.set_defaults(func=command_select_model)
+
+    select_dataset_cmd = subparsers.add_parser("select-dataset", help="Interactively choose a dataset source.")
+    select_dataset_cmd.set_defaults(func=command_select_dataset)
 
     init_cmd = subparsers.add_parser("init", help="Write a starter OmniForge config.")
     init_cmd.add_argument("--output", default="configs/omniforge.yaml", help="Where to write the starter YAML config.")

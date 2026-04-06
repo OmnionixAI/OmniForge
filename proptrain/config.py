@@ -80,8 +80,10 @@ class OptimizationConfig:
     notebook_safe: bool = True
     torch_compile: bool = False
     dataloader_pin_memory: bool = False
+    dataloader_persistent_workers: bool = False
     gradient_checkpointing_reentrant: bool = False
     auto_enable_tf32: bool = True
+    max_memory_margin_gb: float = 1.5
 
 
 @dataclass
@@ -243,8 +245,10 @@ def load_config(path: str | Path) -> OmniForgeConfig:
                     "notebook_safe",
                     "torch_compile",
                     "dataloader_pin_memory",
+                    "dataloader_persistent_workers",
                     "gradient_checkpointing_reentrant",
                     "auto_enable_tf32",
+                    "max_memory_margin_gb",
                 },
             )
         ),

@@ -31,10 +31,17 @@ It is designed to run:
 - provides a branded CLI with optional startup banner and colors
 - auto-recommends runtime optimization profiles based on available hardware
 - supports CLI overrides for model, dataset, output directory, and checkpoint resume
+- includes interactive model and dataset selection helpers
 
-## Important honesty note
+## Production Focus
 
-This repository includes stronger optimization defaults, but it does **not** prove universal `90% less VRAM` and `5x faster` results across every model, GPU, and dataset. Those numbers depend on model size, precision, adapter mode, hardware, sequence length, and batch shape.
+OmniForge is built around production-ready workflows:
+
+- deterministic local artifact storage
+- explicit export, upload, and GGUF conversion steps
+- runtime-aware optimization presets for low-VRAM and throughput-oriented hardware
+- notebook-friendly execution for Kaggle and Colab
+- optional Hugging Face Hub publishing with public or private visibility
 
 ## Install
 
@@ -47,6 +54,8 @@ python -m pip install -e .
 
 ```bash
 python -m omniforge doctor
+python -m omniforge select-model
+python -m omniforge select-dataset
 python -m omniforge inspect --config configs/example_sft.yaml
 python -m omniforge init --output configs/omniforge.yaml --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dataset-source local
 python -m omniforge prepare --config configs/example_sft.yaml
