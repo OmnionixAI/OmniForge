@@ -20,7 +20,7 @@ cli:
 app:
   vendor: Omnionix
   app_name: OmniForge
-  version: 0.1.7
+  version: 0.2.4
 
 data:
   source: local
@@ -42,6 +42,7 @@ data:
 
 optimization:
   profile: smoke
+  auto_profile: true
   low_vram_mode: false
   notebook_safe: true
   torch_compile: false
@@ -70,6 +71,7 @@ training:
   report_to: []
   save_total_limit: 1
   dataloader_num_workers: 0
+  resume_from_checkpoint:
   curriculum:
     enabled: false
   weighted_loss:

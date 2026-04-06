@@ -9,7 +9,7 @@ Branding:
 
 - App: `OmniForge`
 - Vendor: `Omnionix`
-- Version: `0.1.7`
+- Version: `0.2.4`
 
 It is designed to run:
 
@@ -26,10 +26,12 @@ It is designed to run:
 - supports prompt masking, weighted loss, curriculum gating, and sequence packing
 - exports adapters or merged artifacts
 - provides a branded CLI with optional startup banner and colors
+- auto-recommends runtime optimization profiles based on available hardware
+- supports CLI overrides for model, dataset, output directory, and checkpoint resume
 
 ## Important honesty note
 
-This repository includes aggressive optimization defaults, but it does **not** prove universal `90% less VRAM` and `5x faster` results across every model, GPU, and dataset. Those numbers depend on model size, precision, adapter mode, hardware, sequence length, and batch shape. OmniForge does include the practical building blocks usually used to pursue those gains:
+This repository includes stronger optimization defaults, but it does **not** prove universal `90% less VRAM` and `5x faster` results across every model, GPU, and dataset. Those numbers depend on model size, precision, adapter mode, hardware, sequence length, and batch shape. OmniForge does include the practical building blocks usually used to pursue those gains:
 
 - LoRA adapters
 - optional 4-bit loading when `bitsandbytes` is available
@@ -49,6 +51,7 @@ python -m pip install -e .
 
 ```bash
 python -m omniforge doctor
+python -m omniforge inspect --config configs/example_sft.yaml
 python -m omniforge init --output configs/omniforge.yaml --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dataset-source local
 python -m omniforge prepare --config configs/example_sft.yaml
 python -m omniforge train --config configs/example_sft.yaml
@@ -61,6 +64,13 @@ After `pip install -e .`, you can also use:
 ```bash
 omniforge doctor
 omniforge train --config configs/example_sft.yaml
+```
+
+Example one-off overrides without editing YAML:
+
+```bash
+python -m omniforge train --config configs/example_sft.yaml --model Qwen/Qwen2.5-0.5B-Instruct --train-path data/train.jsonl --output-dir outputs/qwen-run
+python -m omniforge train --config configs/hf_dataset_example.yaml --dataset-name tatsu-lab/alpaca
 ```
 
 ## Startup banner
@@ -101,6 +111,7 @@ OmniForge is built to degrade gracefully:
 - if CUDA is unavailable, it falls back to normal loading
 - if `bitsandbytes` is unavailable, 4-bit loading is skipped instead of crashing
 - notebook-safe defaults avoid assuming desktop-only behavior
+- runtime-aware optimization profiles adapt dtype, 4-bit loading, and memory settings automatically
 
 Typical notebook flow:
 

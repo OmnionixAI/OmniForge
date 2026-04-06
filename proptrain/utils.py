@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 from pathlib import Path
 
@@ -24,3 +25,11 @@ def set_seed(seed: int) -> None:
 
 def save_json(path: str | Path, payload: dict) -> None:
     Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def detect_runtime() -> str:
+    if os.environ.get("KAGGLE_KERNEL_RUN_TYPE") or os.environ.get("KAGGLE_URL_BASE"):
+        return "kaggle"
+    if os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
+        return "colab"
+    return "local"

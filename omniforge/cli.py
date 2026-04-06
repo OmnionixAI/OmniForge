@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import os
 from pathlib import Path
 import platform
@@ -10,8 +11,9 @@ import torch
 import yaml
 
 from proptrain.config import load_config
-from proptrain.modeling import bitsandbytes_available
+from proptrain.modeling import apply_runtime_optimizations, bitsandbytes_available, recommend_optimization_profile, runtime_hardware_summary
 from proptrain.pipeline import run_data_prep, run_evaluation, run_export, run_training
+from proptrain.utils import detect_runtime
 
 from . import __version__
 
@@ -87,6 +89,7 @@ def _default_template(model: str, source: str) -> dict:
         "data": local_block,
         "optimization": {
             "profile": "turbo",
+            "auto_profile": True,
             "low_vram_mode": True,
             "notebook_safe": True,
             "torch_compile": False,
@@ -115,6 +118,7 @@ def _default_template(model: str, source: str) -> dict:
             "report_to": [],
             "save_total_limit": 2,
             "dataloader_num_workers": 0,
+            "resume_from_checkpoint": None,
             "curriculum": {"enabled": False, "warmup_fraction": 0.4, "min_difficulty": 0.0, "max_difficulty": 1.0},
             "weighted_loss": {"enabled": True, "default_weight": 1.0},
         },
@@ -135,10 +139,15 @@ def command_init(args: argparse.Namespace) -> int:
 def command_doctor(args: argparse.Namespace) -> int:
     color = not args.no_color
     _show_banner(not args.no_banner)
+    runtime = detect_runtime()
+    hardware = runtime_hardware_summary()
     _print_status("Python", platform.python_version(), color)
     _print_status("Platform", platform.platform(), color)
-    _print_status("CUDA", str(torch.cuda.is_available()), color)
-    _print_status("GPU count", str(torch.cuda.device_count()), color)
+    _print_status("Runtime", runtime, color)
+    _print_status("CUDA", str(hardware["cuda"]), color)
+    _print_status("GPU count", str(hardware["gpu_count"]), color)
+    _print_status("GPU name", str(hardware["gpu_name"]), color)
+    _print_status("VRAM (GB)", str(hardware["total_vram_gb"]), color)
     _print_status("bitsandbytes", str(bitsandbytes_available()), color)
     _print_status("Notebook safe", "Yes", color)
     print()
@@ -153,35 +162,77 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 def _resolve_config(args: argparse.Namespace):
     config = load_config(args.config)
+    if getattr(args, "model", None):
+        config.model.model_name_or_path = args.model
+    if getattr(args, "train_path", None):
+        config.data.source = "local"
+        config.data.train_path = args.train_path
+    if getattr(args, "eval_path", None) is not None:
+        config.data.eval_path = args.eval_path
+    if getattr(args, "dataset_name", None):
+        config.data.source = "hf"
+        config.data.dataset_name = args.dataset_name
+    if getattr(args, "dataset_config_name", None) is not None:
+        config.data.dataset_config_name = args.dataset_config_name
+    if getattr(args, "output_dir", None):
+        config.project.output_dir = args.output_dir
+    if getattr(args, "resume_from_checkpoint", None):
+        config.training.resume_from_checkpoint = args.resume_from_checkpoint
     cli_enabled = config.cli.enabled and os.environ.get("OMNIFORGE_CLI_ENABLED", "1") != "0"
     banner_enabled = cli_enabled and config.cli.startup_banner and not getattr(args, "no_banner", False)
     _show_banner(banner_enabled)
     return config
 
 
+def _write_temp_config(config, source_path: str) -> str:
+    temp_path = Path(config.project.output_dir) / ".omniforge.resolved.yaml"
+    temp_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path.write_text(yaml.safe_dump(asdict(config), sort_keys=False), encoding="utf-8")
+    return str(temp_path)
+
+
 def command_prepare(args: argparse.Namespace) -> int:
-    _resolve_config(args)
-    run_data_prep(args.config)
+    config = _resolve_config(args)
+    config_path = _write_temp_config(config, args.config)
+    run_data_prep(config_path)
     return 0
 
 
 def command_train(args: argparse.Namespace) -> int:
     config = _resolve_config(args)
-    if config.optimization.low_vram_mode:
-        print("OmniForge optimization profile: low-VRAM mode enabled.")
-    run_training(args.config)
+    applied = apply_runtime_optimizations(config)
+    print(f"OmniForge optimization profile: {applied['profile']}")
+    config_path = _write_temp_config(config, args.config)
+    run_training(config_path)
     return 0
 
 
 def command_eval(args: argparse.Namespace) -> int:
-    _resolve_config(args)
-    run_evaluation(args.config)
+    config = _resolve_config(args)
+    config_path = _write_temp_config(config, args.config)
+    run_evaluation(config_path)
     return 0
 
 
 def command_export(args: argparse.Namespace) -> int:
-    _resolve_config(args)
-    run_export(args.config)
+    config = _resolve_config(args)
+    config_path = _write_temp_config(config, args.config)
+    run_export(config_path)
+    return 0
+
+
+def command_inspect(args: argparse.Namespace) -> int:
+    color = not args.no_color
+    config = _resolve_config(args)
+    recommendation = recommend_optimization_profile(config)
+    _print_status("Model", config.model.model_name_or_path, color)
+    _print_status("Data source", config.data.source, color)
+    _print_status("Profile", recommendation["profile"], color)
+    _print_status("DType", recommendation["torch_dtype"], color)
+    _print_status("4-bit", str(recommendation["load_in_4bit"]), color)
+    _print_status("Grad ckpt", str(recommendation["gradient_checkpointing"]), color)
+    _print_status("bf16", str(recommendation["bf16"]), color)
+    _print_status("fp16", str(recommendation["fp16"]), color)
     return 0
 
 
@@ -206,9 +257,17 @@ def build_parser() -> argparse.ArgumentParser:
         ("train", command_train, "Run fine-tuning."),
         ("eval", command_eval, "Generate a sample response from the trained model."),
         ("export", command_export, "Export merged or adapter artifacts."),
+        ("inspect", command_inspect, "Show the resolved optimization plan for a config."),
     ]:
         sub = subparsers.add_parser(name, help=help_text)
         sub.add_argument("--config", required=True, help="Path to an OmniForge YAML config.")
+        sub.add_argument("--model", help="Override the base model for this run.")
+        sub.add_argument("--train-path", help="Override the local training dataset path.")
+        sub.add_argument("--eval-path", help="Override the local evaluation dataset path.")
+        sub.add_argument("--dataset-name", help="Override with a Hugging Face dataset name.")
+        sub.add_argument("--dataset-config-name", help="Optional Hugging Face dataset config name.")
+        sub.add_argument("--output-dir", help="Override the output directory for this run.")
+        sub.add_argument("--resume-from-checkpoint", help="Resume training from an existing checkpoint.")
         sub.set_defaults(func=func)
 
     return parser

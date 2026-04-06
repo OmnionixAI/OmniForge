@@ -24,6 +24,93 @@ def bitsandbytes_available() -> bool:
     return importlib.util.find_spec("bitsandbytes") is not None
 
 
+def runtime_hardware_summary() -> dict[str, Any]:
+    cuda = torch.cuda.is_available()
+    summary: dict[str, Any] = {
+        "cuda": cuda,
+        "gpu_count": torch.cuda.device_count() if cuda else 0,
+        "bf16_supported": torch.cuda.is_bf16_supported() if cuda else False,
+        "bitsandbytes_available": bitsandbytes_available(),
+    }
+    if cuda:
+        props = torch.cuda.get_device_properties(0)
+        summary["gpu_name"] = props.name
+        summary["total_vram_gb"] = round(props.total_memory / (1024**3), 2)
+    else:
+        summary["gpu_name"] = None
+        summary["total_vram_gb"] = 0.0
+    return summary
+
+
+def recommend_optimization_profile(config: OmniForgeConfig) -> dict[str, Any]:
+    summary = runtime_hardware_summary()
+    recommendation: dict[str, Any] = {
+        "profile": config.optimization.profile,
+        "torch_dtype": config.model.torch_dtype,
+        "load_in_4bit": config.model.load_in_4bit,
+        "gradient_checkpointing": config.training.gradient_checkpointing,
+        "dataloader_pin_memory": config.optimization.dataloader_pin_memory,
+        "bf16": config.training.bf16,
+        "fp16": config.training.fp16,
+    }
+    if not config.optimization.auto_profile:
+        return recommendation
+
+    if not summary["cuda"]:
+        recommendation.update(
+            {
+                "profile": "cpu-safe",
+                "torch_dtype": "float32",
+                "load_in_4bit": False,
+                "dataloader_pin_memory": False,
+                "bf16": False,
+                "fp16": False,
+            }
+        )
+        return recommendation
+
+    vram = float(summary["total_vram_gb"])
+    if vram <= 16:
+        recommendation.update(
+            {
+                "profile": "turbo-low-vram",
+                "load_in_4bit": True,
+                "gradient_checkpointing": True,
+                "dataloader_pin_memory": True,
+                "bf16": bool(summary["bf16_supported"]),
+                "fp16": not bool(summary["bf16_supported"]),
+            }
+        )
+    else:
+        recommendation.update(
+            {
+                "profile": "throughput",
+                "load_in_4bit": config.model.load_in_4bit,
+                "gradient_checkpointing": config.training.gradient_checkpointing,
+                "dataloader_pin_memory": True,
+                "bf16": bool(summary["bf16_supported"]),
+                "fp16": not bool(summary["bf16_supported"]),
+            }
+        )
+    if recommendation["bf16"]:
+        recommendation["torch_dtype"] = "bfloat16"
+    elif recommendation["fp16"]:
+        recommendation["torch_dtype"] = "float16"
+    return recommendation
+
+
+def apply_runtime_optimizations(config: OmniForgeConfig) -> dict[str, Any]:
+    recommendation = recommend_optimization_profile(config)
+    config.optimization.profile = recommendation["profile"]
+    config.model.torch_dtype = recommendation["torch_dtype"]
+    config.model.load_in_4bit = recommendation["load_in_4bit"]
+    config.training.gradient_checkpointing = recommendation["gradient_checkpointing"]
+    config.optimization.dataloader_pin_memory = recommendation["dataloader_pin_memory"]
+    config.training.bf16 = recommendation["bf16"]
+    config.training.fp16 = recommendation["fp16"]
+    return recommendation
+
+
 def load_tokenizer(config: OmniForgeConfig):
     tokenizer = AutoTokenizer.from_pretrained(
         config.model.model_name_or_path,

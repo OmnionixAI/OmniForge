@@ -11,7 +11,7 @@ import yaml
 class AppConfig:
     vendor: str = "Omnionix"
     app_name: str = "OmniForge"
-    version: str = "0.1.7"
+    version: str = "0.2.4"
 
 
 @dataclass
@@ -75,6 +75,7 @@ class DataConfig:
 @dataclass
 class OptimizationConfig:
     profile: str = "balanced"
+    auto_profile: bool = True
     low_vram_mode: bool = True
     notebook_safe: bool = True
     torch_compile: bool = False
@@ -119,6 +120,7 @@ class TrainingConfig:
     report_to: list[str] = field(default_factory=list)
     save_total_limit: int = 2
     dataloader_num_workers: int = 0
+    resume_from_checkpoint: str | None = None
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     weighted_loss: WeightedLossConfig = field(default_factory=WeightedLossConfig)
 
@@ -213,6 +215,7 @@ def load_config(path: str | Path) -> OmniForgeConfig:
                 {
                     "profile",
                     "low_vram_mode",
+                    "auto_profile",
                     "notebook_safe",
                     "torch_compile",
                     "dataloader_pin_memory",
@@ -245,6 +248,7 @@ def load_config(path: str | Path) -> OmniForgeConfig:
                     "report_to",
                     "save_total_limit",
                     "dataloader_num_workers",
+                    "resume_from_checkpoint",
                 },
             ),
             curriculum=CurriculumConfig(**_filtered_kwargs(training_raw.get("curriculum"), {"enabled", "warmup_fraction", "min_difficulty", "max_difficulty"})),

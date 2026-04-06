@@ -8,17 +8,22 @@ from transformers import AutoModelForCausalLM, GenerationConfig as HFGenerationC
 
 from .config import load_config
 from .data import build_tokenized_datasets, save_dataset_manifest
-from .modeling import load_model, load_tokenizer, maybe_merge_adapter
+from .modeling import apply_runtime_optimizations, load_model, load_tokenizer, maybe_merge_adapter, runtime_hardware_summary
 from .trainer import AegisTrainer, WeightedCausalCollator, build_training_arguments
-from .utils import ensure_dir, save_json, set_seed
+from .utils import detect_runtime, ensure_dir, save_json, set_seed
 
 
 def run_data_prep(config_path: str):
     config = load_config(config_path)
+    applied = apply_runtime_optimizations(config)
     set_seed(config.project.seed)
     tokenizer = load_tokenizer(config)
     datasets = build_tokenized_datasets(config, tokenizer)
     manifest = save_dataset_manifest(config, datasets)
+    save_json(
+        Path(config.project.output_dir) / "runtime_profile.json",
+        {"runtime": detect_runtime(), "hardware": runtime_hardware_summary(), "applied_optimizations": applied},
+    )
     print(f"Prepared dataset manifest at {manifest}")
     for split_name, split in datasets.items():
         print(f"{split_name}: {len(split)} rows")
@@ -27,6 +32,7 @@ def run_data_prep(config_path: str):
 
 def run_training(config_path: str):
     config = load_config(config_path)
+    applied = apply_runtime_optimizations(config)
     set_seed(config.project.seed)
     ensure_dir(config.project.output_dir)
 
@@ -47,16 +53,27 @@ def run_training(config_path: str):
     else:
         trainer_kwargs["tokenizer"] = tokenizer
     trainer = AegisTrainer(**trainer_kwargs)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=config.training.resume_from_checkpoint)
     trainer.save_model(config.project.output_dir)
     tokenizer.save_pretrained(config.project.output_dir)
     metrics = trainer.evaluate() if datasets.get("eval") is not None else {}
     save_json(Path(config.project.output_dir) / "train_metrics.json", metrics)
+    save_json(
+        Path(config.project.output_dir) / "run_summary.json",
+        {
+            "runtime": detect_runtime(),
+            "hardware": runtime_hardware_summary(),
+            "applied_optimizations": applied,
+            "project_output_dir": config.project.output_dir,
+            "model_name_or_path": config.model.model_name_or_path,
+        },
+    )
     return trainer
 
 
 def run_evaluation(config_path: str):
     config = load_config(config_path)
+    apply_runtime_optimizations(config)
     tokenizer = load_tokenizer(config)
     source_dir = Path(config.project.output_dir)
     if source_dir.exists() and config.adapter.mode.lower() != "full":
@@ -96,6 +113,7 @@ def run_evaluation(config_path: str):
 
 def run_export(config_path: str):
     config = load_config(config_path)
+    apply_runtime_optimizations(config)
     export_dir = ensure_dir(config.export.output_dir)
     tokenizer = load_tokenizer(config)
     source_dir = Path(config.project.output_dir)
