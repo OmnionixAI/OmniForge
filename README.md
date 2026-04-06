@@ -113,5 +113,5 @@ Typical notebook flow:
 
 ## Proprietary posture
 
-This repository includes an `All Rights Reserved` notice in [PROPRIETARY_NOTICE.txt](C:\JV\Other (Coding)\Proprietary Training Script\PROPRIETARY_NOTICE.txt). Third-party packages, datasets, base model weights, and any uploaded Hub repos remain subject to their own licenses and platform rules.
+This repository includes an `All Rights Reserved` notice in `PROPRIETARY_NOTICE.txt`. Third-party packages, datasets, base model weights, and any uploaded Hub repos remain subject to their own licenses and platform rules.
 
