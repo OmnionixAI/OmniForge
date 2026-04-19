@@ -8,7 +8,7 @@ OmniForge is a CLI for fine-tuning Hugging Face language models on either:
 Branding:
 
 - App: `OmniForge`
-- Vendor: `Omnionix`
+- Vendor: `Omnionix™`
 - Version: `0.2.5`
 
 License:
